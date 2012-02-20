@@ -71,6 +71,14 @@ static void get_full_name(redisAsyncContext *c, void *r, void *privdata) {
   redisReply *reply = r;
   if(!reply) return;
 
+  if(reply->type == REDIS_REPLY_ERROR) {
+    printf("Error getting name: %s\n", reply->str);
+    return;
+  } else if(reply->type != REDIS_REPLY_STRING) {
+    printf("Key has wrong type (not string)\n");
+    return;
+  }
+
   char* name = reply->str;
 
   if(!name) return;
@@ -172,7 +180,8 @@ static void request_complete(ebb_request *request) {
     }
 skip:
 
-    redisAsyncCommand(s->redis, get_full_name, rc, "GET v:%s", data->full_name);
+    redisAsyncCommand(s->redis, get_full_name, rc,
+                      "HGET v:%s name", data->full_name);
   }
 
   free(request);
