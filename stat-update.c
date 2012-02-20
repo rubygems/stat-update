@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <assert.h>
+#include <time.h>
 
 #include <ev.h>
 #include "ebb.h"
