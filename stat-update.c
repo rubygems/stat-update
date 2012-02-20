@@ -12,7 +12,7 @@
 #include "async.h"
 #include "adapters/libev.h"
 
-static const char OUT1[] = "HTTP/1.0 302 Moved Temporarily\r\nLocation: http://production.cf.rubygems.org/gems/";
+static const char OUT1[] = "HTTP/1.0 302 Moved Temporarily\r\nServer: rubygems stat-update/1.0\r\nContent-Length: 0\r\nLocation: http://production.cf.rubygems.org/gems/";
 static const char OUT2[] = ".gem\r\n\r\n";
 
 struct conn {
@@ -26,6 +26,7 @@ struct conn {
 struct serv {
   char* host;
   struct ev_loop* loop;
+  int redis_connected;
   redisAsyncContext* redis;
   ev_timer reconnect_timer;
 };
@@ -116,8 +117,11 @@ static void request_complete(ebb_request *request) {
   ebb_connection_write(connection, out, total, continue_responding);
 
   struct serv* s = connection->server->data;
-  redisAsyncCommand(s->redis, get_full_name, strdup(data->full_name),
-                    "GET v:%s", data->full_name);
+
+  if(s->redis_connected) {
+    redisAsyncCommand(s->redis, get_full_name, strdup(data->full_name),
+                      "GET v:%s", data->full_name);
+  }
 
   free(request);
 }
@@ -187,6 +191,7 @@ static void connect_db(const redisAsyncContext* c, int status) {
     return;
   }
 
+  s->redis_connected = 1;
   printf("Connected to redis on %s.\n", s->host);
 }
 
@@ -228,6 +233,7 @@ int main(int argc, char **argv)  {
 
   struct serv s;
   s.host = host;
+  s.redis_connected = 0;
   s.reconnect_timer.data = &s;
 
   s.loop = loop;
