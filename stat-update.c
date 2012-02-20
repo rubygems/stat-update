@@ -20,6 +20,8 @@ struct conn {
   char full_name[256];
   size_t full_name_size;
 
+  int agent_idx;
+  char agent[256];
   char output[1024];
 };
 
@@ -29,6 +31,11 @@ struct serv {
   int redis_connected;
   redisAsyncContext* redis;
   ev_timer reconnect_timer;
+};
+
+struct redis_conn {
+  char* full_name;
+  char today[256];
 };
 
 void on_close(ebb_connection *connection) {
@@ -64,29 +71,23 @@ static void get_full_name(redisAsyncContext *c, void *r, void *privdata) {
   char* name = reply->str;
 
   if(!name) return;
-  char* full_name = (char*)privdata;
-
-  time_t now;
-  struct tm now_tm;
-  char today[256];
-
-  time(&now);
-  gmtime_r(&now, &now_tm);
-  strftime(today, sizeof(today), "%Y-%m-%d", &now_tm);
+  struct redis_conn* rc = privdata;
+  char* full_name = rc->full_name;
 
   redisAsyncCommand(c, 0, 0, "INCR downloads");
   redisAsyncCommand(c, 0, 0, "INCR downloads:rubygem:%s", name);
   redisAsyncCommand(c, 0, 0, "INCR downloads:version:%s", full_name);
 
   redisAsyncCommand(c, 0, 0, "ZINCRBY downloads:today:%s 1 %s",
-                    today, full_name);
+                    rc->today, full_name);
   redisAsyncCommand(c, 0, 0, "ZINCRBY downloads:all 1 %s",full_name);
 
   redisAsyncCommand(c, 0, 0, "HINCRBY downloads:version_history:%s %s 1",
-                    full_name, today);
+                    full_name, rc->today);
   redisAsyncCommand(c, 0, 0, "HINCRBY downloads:rubygem_history:%s %s 1",
-                    name, today);
+                    name, rc->today);
 
+  free(full_name);
   free(privdata);
 }
 
@@ -118,9 +119,55 @@ static void request_complete(ebb_request *request) {
 
   struct serv* s = connection->server->data;
 
+  struct redis_conn* rc = malloc(sizeof(struct redis_conn));
+
+  time_t now;
+  struct tm now_tm;
+
+  time(&now);
+  gmtime_r(&now, &now_tm);
+  strftime(rc->today, sizeof(rc->today), "%Y-%m-%d", &now_tm);
+  rc->full_name = strdup(data->full_name);
+
   if(s->redis_connected) {
-    redisAsyncCommand(s->redis, get_full_name, strdup(data->full_name),
-                      "GET v:%s", data->full_name);
+    // "RubyGems/1.8.17 x86-linux Ruby/1.8.7 (2010-12-23 patchlevel 330)"
+    if(data->agent_idx >= 0) {
+      char* rg_ver = data->agent + 9;
+      char* sp = strchr(rg_ver, ' ');
+      if(!sp) goto skip;
+      *sp = 0;
+
+      redisAsyncCommand(s->redis, 0, 0, "HINCRBY usage:rubygem_version:%s %s 1",
+                        rc->today, rg_ver);
+
+      char* rg_plat = sp + 1;
+      sp = strchr(rg_plat, ' ');
+      if(!sp) goto skip;
+      *sp = 0;
+
+      redisAsyncCommand(s->redis, 0, 0, "HINCRBY usage:ruby_platform:%s %s 1",
+                        rc->today, rg_plat);
+
+      char* ruby_ver = sp + 6;
+      sp = strchr(ruby_ver, ' ');
+      if(!sp) goto skip;
+      *sp = 0;
+
+      redisAsyncCommand(s->redis, 0, 0, "HINCRBY usage:ruby_version:%s %s 1",
+                        rc->today, ruby_ver);
+
+      char* ruby_rel = sp + 2;
+      sp = strchr(ruby_rel, ' ');
+      if(!sp) goto skip;
+      *sp = 0;
+
+      redisAsyncCommand(s->redis, 0, 0, "HINCRBY usage:ruby_release:%s %s 1",
+                        rc->today, ruby_rel);
+
+    }
+skip:
+
+    redisAsyncCommand(s->redis, get_full_name, rc, "GET v:%s", data->full_name);
   }
 
   free(request);
@@ -143,6 +190,26 @@ static void request_path(ebb_request* request, const char* at, size_t len) {
   }
 }
 
+static void request_header_field(ebb_request* r, const char* at,
+                                 size_t len, int idx) {
+  ebb_connection *connection = r->data;
+  struct conn *data = connection->data;
+
+  if(strncmp("User-Agent", at, len) == 0) {
+    data->agent_idx = idx;
+  }
+}
+
+static void request_header_value(ebb_request* r, const char* at,
+                                 size_t len, int idx) {
+  ebb_connection *connection = r->data;
+  struct conn *data = connection->data;
+
+  if(data->agent_idx == idx && strncmp("RubyGems/", at, 8) == 0) {
+    strncpy(data->agent, at, len);
+  }
+}
+
 static ebb_request* new_request(ebb_connection *connection) {
   //printf("request %d\n", ++c);
   ebb_request *request = malloc(sizeof(ebb_request));
@@ -150,6 +217,8 @@ static ebb_request* new_request(ebb_connection *connection) {
   request->data = connection;
   request->on_path = request_path;
   request->on_complete = request_complete;
+  request->on_header_field = request_header_field;
+  request->on_header_value = request_header_value;
   return request;
 }
 
@@ -162,6 +231,8 @@ ebb_connection* new_connection(ebb_server *server, struct sockaddr_in *addr) {
     free(data);
     return NULL;
   }
+
+  data->agent_idx = -1;
 
   ebb_connection_init(connection);
   connection->data = data;
