@@ -1,5 +1,6 @@
 stat-update
 *.o
+*.a
 
 vendor/libev/.deps/
 vendor/libev/.libs/

@@ -1,20 +1,20 @@
 
 stat-update: stat-update.c \
-		vendor/libebb/libebb.a \
-		vendor/hiredis/libhiredis.a \
-		vendor/libev/.libs/libev.a
+		vendor/libebb.a \
+		vendor/libhiredis.a \
+		vendor/libev.a
 	gcc -Ivendor/libebb -Ivendor/libev -Ivendor/hiredis  -c -o stat-update.o -O0 -ggdb stat-update.c
-	gcc -o stat-update vendor/libebb/libebb.a vendor/libev/.libs/libev.a vendor/hiredis/libhiredis.a -O3 stat-update.o
+	gcc -o stat-update stat-update.o vendor/libebb.a vendor/libev.a vendor/libhiredis.a -lm
 
 clean:
 	rm stat-update *.o
 
-vendor/libebb/libebb.a:
+vendor/libebb.a:
 	cp libebb-config.mk vendor/libebb/config.mk
-	cd vendor/libebb; make libebb.a
+	cd vendor/libebb; make libebb.a && mv libebb.a .. && git checkout config.mk
 
-vendor/hiredis/libhiredis.a:
-	cd vendor/hiredis; make
+vendor/libhiredis.a:
+	cd vendor/hiredis; make && cp libhiredis.a ..
 
-vendor/libev/.libs/libev.a:
-	cd vendor/libev; ./configure --disable-shared && make
+vendor/libev.a:
+	cd vendor/libev; ./configure --disable-shared && make && cp .libs/libev.a ..
