@@ -1,3 +1,15 @@
 stat-update
 *.o
-vendor/libev/*
+
+vendor/libev/.deps/
+vendor/libev/.libs/
+vendor/libev/Makefile
+vendor/libev/config.h
+vendor/libev/config.log
+vendor/libev/config.status
+vendor/libev/ev.lo
+vendor/libev/event.lo
+vendor/libev/libev.la
+vendor/libev/libtool
+vendor/libev/stamp-h1
+
