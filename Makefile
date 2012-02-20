@@ -3,7 +3,7 @@ stat-update: stat-update.c \
 		vendor/libebb.a \
 		vendor/libhiredis.a \
 		vendor/libev.a
-	gcc -Ivendor/libebb -Ivendor/libev -Ivendor/hiredis  -c -o stat-update.o -O0 -ggdb stat-update.c
+	gcc -Ivendor/libebb -Ivendor/libev -Ivendor/hiredis -std=c99 -c -o stat-update.o -O0 -ggdb stat-update.c
 	gcc -o stat-update stat-update.o vendor/libebb.a vendor/libev.a vendor/libhiredis.a -lm
 
 clean:

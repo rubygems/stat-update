@@ -12,7 +12,7 @@
 #include "async.h"
 #include "adapters/libev.h"
 
-static const char OUT1[] = "HTTP/1.0 302 Moved Temporarily\r\nServer: rubygems stat-update/1.0\r\nContent-Length: 0\r\nLocation: http://production.cf.rubygems.org/gems/";
+static const char OUT1[] = "HTTP/1.0 302 Moved Temporarily\r\nServer: rubygems stat-update/1.0\r\nContent-Length: 0\r\nLocation: ";
 static const char OUT2[] = ".gem\r\n\r\n";
 
 struct conn {
@@ -26,7 +26,10 @@ struct conn {
 };
 
 struct serv {
-  char* host;
+  char* redis_host;
+  char* http_prefix;
+  int http_prefix_len;
+
   struct ev_loop* loop;
   int redis_connected;
   redisAsyncContext* redis;
@@ -95,29 +98,31 @@ static void request_complete(ebb_request *request) {
   //printf("request complete \n");
   ebb_connection *connection = request->data;
   struct conn *data = connection->data;
+  struct serv* s = connection->server->data;
 
   char* out = data->output;
-  size_t total = 0;
 
   const size_t sz1 = sizeof(OUT1) - 1;
-
   memcpy(out, OUT1, sz1);
   out += sz1;
+
+  memcpy(out, s->http_prefix, s->http_prefix_len);
+  out += s->http_prefix_len;
 
   memcpy(out, data->full_name, data->full_name_size);
   out += data->full_name_size;
 
   const size_t sz2 = sizeof(OUT2) - 1;
   memcpy(out, OUT2, sz2);
+  out += sz2;
+
+  const size_t total = out - data->output;
 
   out = data->output;
-  total = sz1 + data->full_name_size + sz2;
 
   out[total] = 0;
 
   ebb_connection_write(connection, out, total, continue_responding);
-
-  struct serv* s = connection->server->data;
 
   struct redis_conn* rc = malloc(sizeof(struct redis_conn));
 
@@ -263,7 +268,7 @@ static void connect_db(const redisAsyncContext* c, int status) {
   }
 
   s->redis_connected = 1;
-  printf("Connected to redis on %s.\n", s->host);
+  printf("Connected to redis on %s.\n", s->redis_host);
 }
 
 static void disconnect_cb(const redisAsyncContext* c, int status) {
@@ -275,7 +280,7 @@ static void disconnect_cb(const redisAsyncContext* c, int status) {
 }
 
 void start_redis(struct serv* s) {
-  s->redis = redisAsyncConnect(s->host, 6379);
+  s->redis = redisAsyncConnect(s->redis_host, 6379);
   s->redis->data = s;
 
   redisLibevAttach(s->loop, s->redis);
@@ -283,17 +288,40 @@ void start_redis(struct serv* s) {
   redisAsyncSetDisconnectCallback(s->redis, disconnect_cb);
 }
 
+static void die(const char* msg) {
+  printf("Error: %s\n", msg);
+  exit(1);
+}
+
 int main(int argc, char **argv)  {
+  struct serv s;
+  s.redis_host = "127.0.0.1";
+  s.http_prefix = "http://production.cf.rubygems.org/gems/";
+  s.redis_connected = 0;
+  s.reconnect_timer.data = &s;
+
   int port = 5000;
-  char* host = "127.0.0.1";
 
-  if(argc >= 2) {
-    port = atoi(argv[1]);
+  for(int i = 1; i < argc; i++) {
+    if(argv[i][0] == '-') {
+      switch(argv[i][1]) {
+      case 'h':
+        if(++i == argc) die("-h requires an option");
+        s.http_prefix = argv[i];
+        break;
+      case 'p':
+        if(++i == argc) die("-p requires an option");
+        port = atoi(argv[i]);
+        break;
+      case 'r':
+        if(++i == argc) die("-r requires an option");
+        s.redis_host = argv[i];
+        break;
+      }
+    }
   }
 
-  if(argc == 3) {
-    host = argv[2];
-  }
+  s.http_prefix_len = strlen(s.http_prefix);
 
   struct ev_loop *loop = ev_default_loop(0);
   ebb_server server;
@@ -301,11 +329,6 @@ int main(int argc, char **argv)  {
   ebb_server_init(&server, loop);
 
   server.new_connection = new_connection;
-
-  struct serv s;
-  s.host = host;
-  s.redis_connected = 0;
-  s.reconnect_timer.data = &s;
 
   s.loop = loop;
   server.data = &s;
