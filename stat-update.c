@@ -15,8 +15,9 @@
 static const char OUT1[] = "HTTP/1.0 302 Moved Temporarily\r\nServer: rubygems stat-update/1.0\r\nContent-Length: 0\r\nLocation: ";
 static const char OUT2[] = ".gem\r\n\r\n";
 
+static const char TRAGIC[] = "HTTP/1.0 404 Not Found\r\nServer: rubygems stat-update/1.0\r\nContent-Length: 13\r\n\r\nBad request\r\n";
+
 struct conn {
-  struct ev_loop* loop;
   char full_name[256];
   size_t full_name_size;
 
@@ -109,6 +110,12 @@ static void request_complete(ebb_request *request) {
   struct serv* s = connection->server->data;
 
   char* out = data->output;
+
+  if(data->full_name_size == 0) {
+    ebb_connection_write(connection, TRAGIC, sizeof(TRAGIC), continue_responding);
+    free(request);
+    return;
+  }
 
   const size_t sz1 = sizeof(OUT1) - 1;
   memcpy(out, OUT1, sz1);
@@ -246,6 +253,7 @@ ebb_connection* new_connection(ebb_server *server, struct sockaddr_in *addr) {
     return NULL;
   }
 
+  data->full_name_size = 0;
   data->agent_idx = -1;
 
   ebb_connection_init(connection);
