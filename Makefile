@@ -9,9 +9,11 @@ stat-update: stat-update.c \
 clean:
 	rm stat-update *.o
 
+distclean: clean
+	rm vendor/*.a
+
 vendor/libebb.a:
-	cp libebb-config.mk vendor/libebb/config.mk
-	cd vendor/libebb; make libebb.a && mv libebb.a .. && git checkout config.mk
+	cd vendor/libebb; make libebb.a && mv libebb.a ..
 
 vendor/libhiredis.a:
 	cd vendor/hiredis; make && cp libhiredis.a ..

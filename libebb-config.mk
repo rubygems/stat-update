@@ -17,7 +17,7 @@ LIBS = ${EVLIBS} ${GNUTLSLIBS} -lefence
 
 # flags
 CPPFLAGS = -DVERSION=\"$(VERSION)\" ${GNUTLSFLAGS}
-CFLAGS   = -O2 -g -Wall ${INCS} ${CPPFLAGS} -fPIC
+CFLAGS   = -O0 -ggdb -g -Wall ${INCS} ${CPPFLAGS} -fPIC
 LDFLAGS  = -s ${LIBS}
 LDOPT    = -shared
 SUFFIX   = so
