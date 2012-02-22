@@ -17,17 +17,59 @@ static const char OUT2[] = ".gem\r\n\r\n";
 
 static const char TRAGIC[] = "HTTP/1.0 404 Not Found\r\nServer: rubygems stat-update/1.0\r\nContent-Length: 13\r\n\r\nBad request\r\n";
 
+struct str {
+  size_t capa;
+  size_t len;
+  char* ptr;
+};
+
+typedef struct str str;
+
+void str_assoc(str* s, char* ptr, size_t capa) {
+  s->ptr = ptr;
+  s->capa = capa - 1; // reserve space for a null byte
+  s->len = 0;
+}
+
+int str_append(str* s, const char* ptr, size_t len) {
+  if(s->len + len > s->capa) return 0;
+  memcpy(s->ptr + s->len, ptr, len);
+
+  s->len += len;
+  s->ptr[s->len] = 0;
+
+  return 1;
+}
+
+int str_append_str(str* d, str* s) {
+  return str_append(d, s->ptr, s->len);
+}
+
+#define CONN_FULL_NAME_SIZE 256
+#define OUTPUT_BUFF 1024
 #define AGENT_BUFF 256
 
 struct conn {
-  char full_name[256];
-  size_t full_name_size;
+  char full_name_data[CONN_FULL_NAME_SIZE];
+  str full_name;
 
   int agent_idx;
-  int agent_set;
-  char agent[AGENT_BUFF];
-  char output[1024];
+
+  char agent_data[AGENT_BUFF];
+  str agent;
+
+  char output_data[OUTPUT_BUFF];
+  str output;
 };
+
+typedef struct conn conn;
+
+void conn_init(conn* c) {
+  str_assoc(&c->full_name, c->full_name_data, CONN_FULL_NAME_SIZE);
+  c->agent_idx = -1;
+  str_assoc(&c->agent, c->agent_data, AGENT_BUFF);
+  str_assoc(&c->output, c->output_data, OUTPUT_BUFF);
+}
 
 struct serv {
   char* redis_host;
@@ -40,9 +82,11 @@ struct serv {
   ev_timer reconnect_timer;
 };
 
+#define TODAY_SIZE 16
+
 struct redis_conn {
   char* full_name;
-  char today[256];
+  char today[TODAY_SIZE];
 };
 
 void on_close(ebb_connection *connection) {
@@ -52,7 +96,7 @@ void on_close(ebb_connection *connection) {
 
 static void continue_responding(ebb_connection *connection) {
   int r;
-  struct conn *data = connection->data;
+  conn *data = connection->data;
   //printf("response complete \n");
   ebb_connection_schedule_close(connection);
 }
@@ -111,38 +155,25 @@ cleanup:
 static void request_complete(ebb_request *request) {
   //printf("request complete \n");
   ebb_connection *connection = request->data;
-  struct conn *data = connection->data;
+  conn *data = connection->data;
   struct serv* s = connection->server->data;
 
-  char* out = data->output;
-
-  if(data->full_name_size == 0) {
-    ebb_connection_write(connection, TRAGIC, sizeof(TRAGIC), continue_responding);
+  if(data->full_name.len == 0) {
+tragic:
+    ebb_connection_write(connection, TRAGIC,
+                         sizeof(TRAGIC), continue_responding);
     free(request);
     return;
   }
 
-  const size_t sz1 = sizeof(OUT1) - 1;
-  memcpy(out, OUT1, sz1);
-  out += sz1;
+  str* out = &data->output;
 
-  memcpy(out, s->http_prefix, s->http_prefix_len);
-  out += s->http_prefix_len;
+  if(!str_append(out, OUT1, sizeof(OUT1) - 1)) goto tragic;
+  if(!str_append(out, s->http_prefix, s->http_prefix_len)) goto tragic;
+  if(!str_append_str(out, &data->full_name)) goto tragic;
+  if(!str_append(out, OUT2, sizeof(OUT2) - 1)) goto tragic;
 
-  memcpy(out, data->full_name, data->full_name_size);
-  out += data->full_name_size;
-
-  const size_t sz2 = sizeof(OUT2) - 1;
-  memcpy(out, OUT2, sz2);
-  out += sz2;
-
-  const size_t total = out - data->output;
-
-  out = data->output;
-
-  out[total] = 0;
-
-  ebb_connection_write(connection, out, total, continue_responding);
+  ebb_connection_write(connection, out->ptr, out->len, continue_responding);
 
   struct redis_conn* rc = malloc(sizeof(struct redis_conn));
 
@@ -152,12 +183,12 @@ static void request_complete(ebb_request *request) {
   time(&now);
   gmtime_r(&now, &now_tm);
   strftime(rc->today, sizeof(rc->today), "%Y-%m-%d", &now_tm);
-  rc->full_name = strdup(data->full_name);
+  rc->full_name = strdup(data->full_name.ptr);
 
   if(s->redis_connected) {
     // "RubyGems/1.8.17 x86-linux Ruby/1.8.7 (2010-12-23 patchlevel 330)"
-    if(data->agent_set) {
-      char* rg_ver = data->agent + 9;
+    if(data->agent.len > 20) {
+      char* rg_ver = data->agent.ptr + 9;
       char* sp = strchr(rg_ver, ' ');
       if(!sp) goto skip;
       *sp = 0;
@@ -193,7 +224,7 @@ static void request_complete(ebb_request *request) {
 skip:
 
     redisAsyncCommand(s->redis, get_full_name, rc,
-                      "HGET v:%s name", data->full_name);
+                      "HGET v:%s name", data->full_name.ptr);
   }
 
   free(request);
@@ -201,25 +232,19 @@ skip:
 
 static void request_path(ebb_request* request, const char* at, size_t len) {
   ebb_connection *connection = request->data;
-  struct conn *data = connection->data;
+  conn *data = connection->data;
 
   if(len > 10 && // /gems/ + .gem
       strncmp(at, "/gems/", 5) == 0 &&
       strncmp(at + (len - 4), ".gem", 4) == 0) {
-    char* buf = data->full_name;
-    size_t sz = len - 10;
-
-    data->full_name_size = sz;
-
-    memcpy(buf, at+6, sz);
-    buf[sz] = 0;
+    str_append(&data->full_name, at + 6, len - 10);
   }
 }
 
 static void request_header_field(ebb_request* r, const char* at,
                                  size_t len, int idx) {
   ebb_connection *connection = r->data;
-  struct conn *data = connection->data;
+  conn *data = connection->data;
 
   if(strncmp("User-Agent", at, len) == 0) {
     data->agent_idx = idx;
@@ -229,13 +254,12 @@ static void request_header_field(ebb_request* r, const char* at,
 static void request_header_value(ebb_request* r, const char* at,
                                  size_t len, int idx) {
   ebb_connection *connection = r->data;
-  struct conn *data = connection->data;
+  conn *data = connection->data;
 
   if(data->agent_idx == idx &&
-      len < AGENT_BUFF &&
+      len > 8 &&
       strncmp("RubyGems/", at, 8) == 0) {
-    data->agent_set = 1;
-    strncpy(data->agent, at, len);
+    str_append(&data->agent, at, len);
   }
 }
 
@@ -252,7 +276,7 @@ static ebb_request* new_request(ebb_connection *connection) {
 }
 
 ebb_connection* new_connection(ebb_server *server, struct sockaddr_in *addr) {
-  struct conn *data = malloc(sizeof(struct conn));
+  conn *data = malloc(sizeof(conn));
   if(data == NULL) return NULL;
 
   ebb_connection *connection = malloc(sizeof(ebb_connection));
@@ -261,9 +285,7 @@ ebb_connection* new_connection(ebb_server *server, struct sockaddr_in *addr) {
     return NULL;
   }
 
-  data->full_name_size = 0;
-  data->agent_set = 0;
-  data->agent_idx = -1;
+  conn_init(data);
 
   ebb_connection_init(connection);
   connection->data = data;
