@@ -69,21 +69,22 @@ static void continue_responding(ebb_connection *connection) {
  */ 
 
 static void get_full_name(redisAsyncContext *c, void *r, void *privdata) {
+  struct redis_conn* rc = privdata;
+
   redisReply *reply = r;
-  if(!reply) return;
+  if(!reply) goto cleanup;
 
   if(reply->type == REDIS_REPLY_ERROR) {
     printf("Error getting name: %s\n", reply->str);
-    return;
+    goto cleanup;
   } else if(reply->type != REDIS_REPLY_STRING) {
     printf("Key has wrong type (not string)\n");
-    return;
+    goto cleanup;
   }
 
   char* name = reply->str;
 
-  if(!name) return;
-  struct redis_conn* rc = privdata;
+  if(!name) goto cleanup;
   char* full_name = rc->full_name;
 
   redisAsyncCommand(c, 0, 0, "INCR downloads");
@@ -99,7 +100,8 @@ static void get_full_name(redisAsyncContext *c, void *r, void *privdata) {
   redisAsyncCommand(c, 0, 0, "HINCRBY downloads:rubygem_history:%s %s 1",
                     name, rc->today);
 
-  free(full_name);
+cleanup:
+  free(rc->full_name);
   free(privdata);
 }
 
