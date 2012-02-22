@@ -17,12 +17,15 @@ static const char OUT2[] = ".gem\r\n\r\n";
 
 static const char TRAGIC[] = "HTTP/1.0 404 Not Found\r\nServer: rubygems stat-update/1.0\r\nContent-Length: 13\r\n\r\nBad request\r\n";
 
+#define AGENT_BUFF 256
+
 struct conn {
   char full_name[256];
   size_t full_name_size;
 
   int agent_idx;
-  char agent[256];
+  int agent_set;
+  char agent[AGENT_BUFF];
   char output[1024];
 };
 
@@ -153,7 +156,7 @@ static void request_complete(ebb_request *request) {
 
   if(s->redis_connected) {
     // "RubyGems/1.8.17 x86-linux Ruby/1.8.7 (2010-12-23 patchlevel 330)"
-    if(data->agent_idx >= 0) {
+    if(data->agent_set) {
       char* rg_ver = data->agent + 9;
       char* sp = strchr(rg_ver, ' ');
       if(!sp) goto skip;
@@ -228,7 +231,10 @@ static void request_header_value(ebb_request* r, const char* at,
   ebb_connection *connection = r->data;
   struct conn *data = connection->data;
 
-  if(data->agent_idx == idx && strncmp("RubyGems/", at, 8) == 0) {
+  if(data->agent_idx == idx &&
+      len < AGENT_BUFF &&
+      strncmp("RubyGems/", at, 8) == 0) {
+    data->agent_set = 1;
     strncpy(data->agent, at, len);
   }
 }
@@ -256,6 +262,7 @@ ebb_connection* new_connection(ebb_server *server, struct sockaddr_in *addr) {
   }
 
   data->full_name_size = 0;
+  data->agent_set = 0;
   data->agent_idx = -1;
 
   ebb_connection_init(connection);
