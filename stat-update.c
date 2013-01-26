@@ -256,10 +256,12 @@ static void request_header_value(ebb_request* r, const char* at,
   ebb_connection *connection = r->data;
   conn *data = connection->data;
 
-  if(data->agent_idx == idx &&
-      len > 8 &&
-      strncmp("RubyGems/", at, 8) == 0) {
-    str_append(&data->agent, at, len);
+  if(data->agent_idx == idx && len > 8) {
+    if(strncmp("RubyGems/", at, 8) == 0) {
+      str_append(&data->agent, at, len);
+    } else if(strncmp("Ruby, RubyGems/", at, 15) == 0) {
+      str_append(&data->agent, at+6, len-6);
+    }
   }
 }
 

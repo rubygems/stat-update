@@ -3,4 +3,4 @@
 	url = https://github.com/evanphx/libebb.git
 [submodule "vendor/hiredis"]
 	path = vendor/hiredis
-	url = https://github.com/antirez/hiredis.git
+	url = https://github.com/redis/hiredis.git
