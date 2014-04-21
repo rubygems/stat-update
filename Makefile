@@ -7,10 +7,10 @@ stat-update: stat-update.c \
 	gcc -o stat-update stat-update.o vendor/libebb.a vendor/libev.a vendor/libhiredis.a -lm
 
 clean:
-	rm stat-update *.o
+	rm -f stat-update *.o
 
 distclean: clean
-	rm vendor/*.a
+	rm -f vendor/*.a
 
 vendor/libebb.a:
 	cd vendor/libebb; make libebb.a && mv libebb.a ..
