@@ -1,0 +1,11 @@
+Source: stat-update
+Section: unknown
+Priority: extra
+Maintainer: Sam Kottler <shk@linux.com>
+Build-Depends: debhelper (>= 8.0.0)
+Standards-Version: 3.9.5
+Homepage: https://github.com/rubygems/stat-update
+
+Package: stat-update
+Architecture: any
+Depends: ${misc:Depends}
