@@ -1,3 +1,3 @@
 #!/bin/bash
 exec 2>&1
-exec /usr/local/bin/stat-update -h http://production.cf.rubygems.org/gems/
+exec /usr/local/bin/stat-update -r redis02.production.rubygems.org -h http://production.cf.rubygems.org/gems/
