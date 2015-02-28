@@ -1,10 +1,17 @@
 language: c
-
 compiler:
-  - clang
-  - gcc
+- clang
+- gcc
 
 before_install:
-  - git submodule update --init --recursive
+- git submodule update --init --recursive
 
-script: make
+script: make && ./script/package
+
+deploy:
+  provider: packagecloud
+  username: "rubygems"
+  token:
+    secure: q8gJNLxOVtV9+Em+wtm527q9QVQE2IKSkYJ1EjQXZXMMj4Roxs0eUTX7es5CHIIq2d6nohgv4U0dhJq7xJjLc5UuTIiQO9LEptOqvaWJSTfC5bxi9Zi4A/sbor3/t0szqCiuZZ63+HN7LaPyPOSbYhA+V3D52K+HIMBBUQsvnlU=
+  dist: "ubuntu/trusty"
+  local-dir: "deb"
