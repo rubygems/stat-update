@@ -20,8 +20,8 @@ mkdir -p tmp/etc/service/stat-update
 make
 
 strip -g stat-update
-cp stat-update ../tmp/usr/local/bin
-cp runit/run ../tmp/etc/service/stat-update/
+cp stat-update tmp/usr/local/bin
+cp runit/run tmp/etc/service/stat-update/
 
 bundle exec fpm -s dir -t deb \
   -n stat-update -v 1.1.0 --iteration 1 \
